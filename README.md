@@ -1,12 +1,12 @@
-# Masters-internship: closed-loop all-optical neurophys (AON)
-Project contains scripts for establishing communication between software used in closed-loop all-optical neurophysiology (AON) experiment.
+# Closed-loop all-optical neurophys (AON)
+Master's internship project. Repository contains scripts for establishing communication between software used in closed-loop all-optical neurophysiology (AON) experiment.
 
 The AON experiment we are aiming to establish should work in a closed loop, for which we employ the power of 3 distinctive neuroscientific methods: fluorescence imaging, dynamic clamp and optogenetics. The most important components for all-optical closed-loop system are:
 * fluorescent imaging of presynaptic neuron,
 * activity-dependent modelling of synaptic response by dynamic clamp (DC), and
 * DC-dependent photo-stimulation of postsynaptic neuron via LED/laser system. 
 
-Experimental workflow starts by acquiring fluorescent signal from a single neuron we are imaging. This signal is processed by an image-processing algorithm which extracts single-neuron activity trace. Inferred neural activity serves as streaming input to dynamic clamp and, based on this input, DC models a response from user-defined artificial synapse. Simulated synaptic response in turn drives the behaviour of our photo-stimulation system (i.e. DC modulates the light properties used for stimulation of postsynaptic neuron). Protocol steps should be executed with minimal latency, i.e. with time-resolution as near to the real-time neural communication as possible.
+Experimental workflow starts by acquiring fluorescent signal from a single neuron we are imaging. This signal is processed by an image-processing algorithm which extracts single-neuron activity trace. Inferred neural activity serves as streaming input to dynamic clamp and, based on this data, DC models a response from user-defined artificial synapse. Simulated synaptic response in turn drives the behaviour of our photo-stimulation system (i.e. DC modulates the light properties used for stimulation of postsynaptic neuron). Protocol should be executed with minimal latency, i.e. with time-resolution as near to the real-time neural communication as possible.
 
 Software list with details:
 
