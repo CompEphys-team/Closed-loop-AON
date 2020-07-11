@@ -13,7 +13,7 @@ Software list with details:
 **MicroManager**: https://micro-manager.org
 
 
-Used for hardware control. We couple our sCMOS Hamamatsu ORCA-Flash2.8 camera with MicroManager and perform fluorescence imaging. MicroManager has scripting option which gives user the power to further extend its capabilities. For purpose of closed-loop experiment, we have constructed a script for fast image capturing and communication between MicroManager and image analysis software (see CaImAn below).
+Used for hardware control. We couple our sCMOS Hamamatsu ORCA-Flash2.8 camera with MicroManager and perform fluorescence imaging. MicroManager has scripting option which gives user the power to further extend its capabilities. For purpose of closed-loop experiment, we have constructed a script for fast image acquisition and simultaneous communication between MicroManager and image analysis software (see CaImAn below).
 
 **CaImAn**: https://caiman.readthedocs.io/en/master/Overview.html
 
