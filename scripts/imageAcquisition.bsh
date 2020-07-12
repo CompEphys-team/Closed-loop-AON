@@ -1,0 +1,138 @@
+/** 
+ *  The script implements streaming image acquisition part of the closed-loop system between MicroManager and CaImAn toolbox (python). 
+ *  Two processes are communicating through named pipes, which are used for sending signals that trigger specific processing steps in both
+ *  environments. Images that are acquired during the recording are saved in a multiTIFF file which is in turn read by CaImAn and used for 
+ *  online analysis.
+ *  
+ *  author: Tea Tompos (master's internship project, June 2020)
+ */
+
+ import org.micromanager.data.internal.*;
+ import java.time.format.DateTimeFormatter;  
+ import java.time.LocalDateTime; 
+ import java.io.*;
+ import java.io.IOException;
+ 
+ // ********* USER DEFINED PARAMETERS *********
+ 
+ sendPipeName = "/tmp/sendPipeMMCaImAn.ser";			// specify named pipe for sending messages from MM
+ receivePipeName = "/tmp/getPipeMMCaImAn.ser";		// specify named pipe for receiving messages to MM
+ 
+ saveLocationPrefix = "/Users/teatompos/caiman_data/example_movies/"; 	// define saving file directory 
+ 																									// (has to end with a front (or back) slash, depending on the OS)
+ initialFrames = 30;		// frames used to initialize CaImAN
+ streamingFrames = 150;		// frames used for online analysis
+
+ print("Initial parameters are set:\n" + initialFrames + " initial frames and " + streamingFrames + " frames for online analysis.");
+
+ // ********* OPEN MULTI-TIFF DATASTORE *********
+
+ dtf = DateTimeFormatter.ofPattern("yyyyMMdd_HH-mm-ss");  // date-time formatter
+ now = LocalDateTime.now();  // time at saving point
+ fileName = "Recording" + dtf.format(now);
+ saveLocation = saveLocationPrefix + fileName; // create unique folder name
+
+ // createMultipageTIFFDatastore(directory, shouldGenerateSeparateMetadata, shouldSplitPositions):
+ multiTIFFstore = mm.data().createMultipageTIFFDatastore(saveLocation, true, true); 
+
+ try {
+ 	fileOut = new RandomAccessFile(sendPipeName, "rw"); 
+ 	msg = new String(fileName);
+	fileOut.write(msg.getBytes()); 
+	print("File name is : " + saveLocation + ". Message was sent to CaImAn.");
+ } catch (Exception e) {
+ 	e.printStackTrace();
+ }; 
+
+ // ********* BASIC IMAGE ACQUISITION PARAMETERS *********
+ 
+ cameraLabel = mmc.getCameraDevice();
+ mmc.setProperty(cameraLabel, "PixelType", "8bit");  // change pixel type
+ mm.displays().createDisplay(multiTIFFstore); // create a display to show images as they are acquired.
+ builder = mm.data().getCoordsBuilder().z(0).channel(0).stagePosition(0);   // set up a Coords.CoordsBuilder for applying coordinates to each image.
+
+ 
+ // ********* START ACQUISITION OF INITIALIZATION FRAMES *********
+ 
+ intervalBetweenFrames_init = 10;  // in ms
+ mmc.startSequenceAcquisition(initialFrames, intervalBetweenFrames_init, true);  // true/false for stopping if the buffer overflows
+ print("*** Initial acquisition started! ***");
+ int curFrame = 0;
+ while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(cameraLabel)) {
+    if (mmc.getRemainingImageCount() > 0) {
+   	tagged = mmc.popNextTaggedImage();
+      image = mm.data().convertTaggedImage(tagged, builder.time(curFrame).build(), null); // convert to an Image at the desired timepoint
+      multiTIFFstore.putImage(image);	 // this line displays and saves the image
+      curFrame++;
+	 };
+ };
+ mmc.stopSequenceAcquisition(); 			// stop acquisition when initialization frames are acquired
+ 
+ // ********* SEND TRIGGER MESSAGE TO PIPE *********
+ 
+ initTrigger = "startInitProcess";					// initialization trigger message
+ if (curFrame == initialFrames) {
+ 	try {
+ 		fileOut = new RandomAccessFile(sendPipeName, "rw"); 
+ 		msg = new String(initTrigger + "\n");
+		fileOut.write(msg.getBytes()); 
+		print("Initial acquisition stopped. Trigger message was sent to CaImAn.");
+ 	} catch (Exception e) {
+ 		e.printStackTrace();
+ 	}; 
+ } else { 
+ 	print("Number of frames acquired is not sufficient to trigger initialization protocol with CaImAn.");
+ };
+
+ // ********* WAIT FOR TRIGGER MESSAGE *********
+
+ print("*** Waiting for CaImAn initialization to finish ***");
+ fileIn = new RandomAccessFile(receivePipeName, "rw");
+ pipeMessage = fileIn.readLine(); 		// script is paused until it receives a message
+ 
+ expectedMessage = "startStreamAcquisition";
+ mmc.sleep(3000); // pause in script execution for the specified number of millisecond (give caiman time to open read pipe)
+ 
+ // ********* RESUME ACQUISITION OF FRAMES FOR STREAMING ANALYSIS *********
+ 
+ if (Objects.equals(pipeMessage, expectedMessage)) {
+ 	// curFrame matches the initialFrames at this point, so start acquiring from initialFrames+1 and stop at initialFrames + streamingFrames
+ 	totalFrames = initialFrames + streamingFrames;
+ 	intervalBetweenFrames_stream = 0;   // in ms
+ 	mmc.startSequenceAcquisition(totalFrames, intervalBetweenFrames_stream, true);  // true/false for stopping if the buffer overflows
+ 	print("CaImAn finished initializing! \n*** Starting streaming acquisition! ***");
+ 	while (mmc.getRemainingImageCount() > initialFrames || mmc.isSequenceRunning(cameraLabel)) {
+ 		if (mmc.getRemainingImageCount() > initialFrames) {
+ 			tagged = mmc.popNextTaggedImage();
+       	image = mm.data().convertTaggedImage(tagged, builder.time(curFrame).build(), null); // convert to an Image at the desired timepoint
+      	multiTIFFstore.putImage(image);	 // this line displays saved image
+
+			streamTrigger = "startStreamAnalysis";
+      	if (curFrame == initialFrames) {
+      	 	 	try {
+ 						fileOut = new RandomAccessFile(sendPipeName, "rw"); 
+ 						msg = new String(streamTrigger + "\n");					// sent trigger for online analysis
+						fileOut.write(msg.getBytes()); 
+						print("Trigger message for streaming analysis sent to CaImAn!");
+ 					} catch (Exception e) {
+ 						e.printStackTrace();
+ 					};
+ 			};   	
+      	curFrame++; // increment frame number
+	 	};
+ 	};
+ mmc.stopSequenceAcquisition();		// stop acquisition when total number of frames is acquired
+ print("*** Streaming acquisition is done! ***");
+ } else {
+ 	print("Pipe received unfamiliar trigger message.. terminating script.");
+ 	return;
+ };
+
+ 
+ // ********* CLOSE MULTI-TIFF FILE FOR GOOD *********
+ multiTIFFstore.freeze(); 			// when finished adding data to the store/file, call freeze()
+ print("Image acquisition protocol is over.");
+
+
+
+ 
