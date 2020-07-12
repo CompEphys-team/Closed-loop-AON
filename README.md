@@ -11,4 +11,4 @@ Repository contains scripts for establishing communication between software used
  
  _./scripts_
 
-This folder contains original image acquisition and image analysis scripts.
+This folder contains original image acquisition and image analysis scripts. They should be tested during actual imaging. Missing: output from CaImAn to StdpC.
