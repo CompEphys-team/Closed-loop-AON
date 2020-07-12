@@ -6,7 +6,7 @@ Repository contains scripts for establishing communication between software used
 
  _./demos_
   
- This folder contains image acquisition script (for MicroManager), image analysis script (for python/CaImAn) and a demo calcium recording movie for testing the two scripts. See Wiki for more details.
+ This folder contains image acquisition script (for MicroManager software), image analysis script (for CaImAn/python toolbox) and a demo calcium recording movie for testing the two scripts. See Wiki for more details.
  
  
  _./scripts_
