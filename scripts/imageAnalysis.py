@@ -60,6 +60,22 @@ fileToProcess = os.path.join(CaimanFileDirectory, 'example_movies', getFileName,
 
 print("File name received: " + fullFileName)
 timer.toc()
+
+# %% monkeypatch fit_next() so we can acces deltaf/f0 values during online analysis
+def monkeypatch(func):
+    def wrapped(*args, **kwargs):
+        result = func(*args, **kwargs)
+        self = args[0] 
+        process_frame(self)
+        return result
+    return wrapped
+
+cnmf.online_cnmf.OnACID.fit_next = monkeypatch(cnmf.online_cnmf.OnACID.fit_next) # replace the class function
+
+def process_frame(results):
+    deltaf = results.estimates.C_on[0][-1] # last value in estimates.C_on should be deltaf/f0 for last processed frame
+    print(deltaf) # this should be pushed to StdpC (instead of print), but values are not correct 
+   
 # %% ********* Defining parameters: *********
 print("*** Defining analysis parameters ***")
 
@@ -167,7 +183,7 @@ timer.toc()
 # %% ********* Visualize results of initialization: *********
 print("Initialization finished. Choose threshold parameter to adjust accepted/rejected components!")
 logging.info('Number of components:' + str(caimanResults.estimates.A.shape[-1]))
-visual = cm.load(fileToProcess[0], subindices=slice(0,500)).local_correlations(swap_dim=False)
+visual = cm.load(fileToProcess[0], subindices=slice(0,initFrames)).local_correlations(swap_dim=False)
 caimanResults.estimates.plot_contours(img=visual)
 
 #  ********* Use CNN clasifier to modify accepted/rejected components: *********
@@ -180,7 +196,7 @@ if cnnFlag:
     caimanResults.estimates.plot_contours(img=visual, idx=caimanResults.estimates.idx_components)
     
 # pause for user to decide on parameters
-input("Press Enter after the parameter is chosen...")
+# input("Press Enter after the parameter is chosen...")
 # %% ********* Send message to MicroManager to trigger data streaming: *********   
 triggerStream = "startStreamAcquisition\n"      # include new line at the end
 pipeWrite = open(sendPipeName, 'w', 1)          # write (1 is for activating line buffering)
@@ -200,10 +216,10 @@ if triggerMessage_analyse == expectedMessage_analyse:
     caimanResults.fit_online()           # online analysis
 
 # %% TO DO:
-    # get output from fit_online()  # tried with monkeypatch -> it works well but values are not
-                                    # what I expected, i.e. OnACID does not allow access to frame-by-frame
-                                    # data easily.. have to wait for toolbox update
-    # pass the values to stdpc
+    #(1) get output from fit_online()  # tried with monkeypatch -> it works well but values are not
+                                       # what I expected, i.e. OnACID does not allow access to frame-by-frame
+                                       # data easily.. have to wait for toolbox update
+    #(2) pass the values to stdpc
 
 
 

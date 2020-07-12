@@ -145,7 +145,7 @@ if cnnFlag:
 
 # %% ********* Send message to MicroManager to trigger data streaming: *********   
 
-input("Press Enter after the parameter is chosen...") # pause for user to decide on parameters
+# input("Press Enter after the parameter is chosen...") # pause for user to decide on parameters
 
 triggerStream = "startStreamAcquisition\n"      # include new line at the end
 pipeWrite = open(sendPipeName, 'w', 1)          # write (1 is for activating line buffering)
