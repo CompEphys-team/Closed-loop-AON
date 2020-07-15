@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-/** 
- *  The script implements streaming image analysis part of the closed-loop system between MicroManager 
- *  and CaImAn toolbox (python). Two processes are communicating through named pipes, which are used for 
- *  sending signals that trigger specific processing steps in both environments. Images that are acquired 
- *  during the recording are saved in a multiTIFF file which is in turn read by CaImAn and used for online 
+/**
+ *  The script implements streaming image analysis part of the closed-loop system between MicroManager
+ *  and CaImAn toolbox (python). Two processes are communicating through named pipes, which are used for
+ *  sending signals that trigger specific processing steps in both environments. Images that are acquired
+ *  during the recording are saved in a multiTIFF file which is in turn read by CaImAn and used for online
  *  analysis.
- *  
+ *
  *  author: Tea Tompos (master's internship project, June 2020)
  */
 
@@ -33,6 +33,7 @@ timer.tic()    # start measuring time
 sendPipeName = "getPipeMMCaImAn.ser"	       # FOR SENDING MESSAGES --> TO MicroManager
 receivePipeName = "sendPipeMMCaImAn.ser"     # FOR READING MESSAGES --> FROM MicroManager
 
+#MMfileDirectory = '/Applications/MicroManager 2.0 gamma/uMresults'
 CaimanFileDirectory = caiman_datadir()   # specify where the file is saved
 
 if windows:
@@ -113,7 +114,7 @@ timer.toc()
 def monkeypatch(func):
     def wrapped(*args, **kwargs):
         result = func(*args, **kwargs)
-        self = args[0] 
+        self = args[0]
         process_frame(self)
         return result
     return wrapped
@@ -122,8 +123,8 @@ cnmf.online_cnmf.OnACID.fit_next = monkeypatch(cnmf.online_cnmf.OnACID.fit_next)
 
 def process_frame(results):
     deltaf = results.estimates.C_on[0][-1] # last value in estimates.C_on should be deltaf/f0 for last processed frame
-    print(deltaf) # this should be pushed to StdpC (instead of print), but values are not correct 
-   
+    print(deltaf) # this should be pushed to StdpC (instead of print), but values are not correct
+
 # %% ********* Defining parameters: *********
 print("*** Defining analysis parameters ***")
 
@@ -131,7 +132,7 @@ print("*** Defining analysis parameters ***")
 fps = 40                # ideally it would be calculated by: (frame2-frame1) / totalTime(s)
 decayTime = 0.45        # length of a typical transient in seconds
 noiseStd = 'mean'       # PSD averaging method for computing noise std
-arSystem = 1            # order of the autoregressive system 
+arSystem = 1            # order of the autoregressive system
 expectedNeurons = 1     # number of expected neurons (upper bound), usually None, but we have only one in FOV
 patches = None          # if None, the whole FOV is processed, otherwise: specify half-size of patch in pixels
 onePhoton = True        # whether to use 1p processing mode
@@ -187,13 +188,13 @@ initialParamsDict = { 'fnames': fileToProcess,
               'rval_thr': spaceThr,
               'gSig': neuronRadius,
               'gSiz': neuronBound,
-           
+
         # params for OnACID:
               'ds_factor': spatDown_online,
               'epochs': epochs,
               'expected_comps': expectedNeurons_online,
               'init_batch': initFrames,
-              'init_method':initMethod_online,  
+              'init_method':initMethod_online,
               'min_SNR': minSNR_online,
               'motion_correct': motCorrection,
               'normalize': normalize_online,
@@ -203,7 +204,7 @@ initialParamsDict = { 'fnames': fileToProcess,
               'sniper_mode': cnnFlag,
               'thresh_CNN_noisy': thresh_CNN_noisy,
 
-              
+
     }
 
 # %% ********* Wait for pre-initialization trigger: *********
@@ -253,11 +254,11 @@ caimanResults.estimates.plot_contours(img=visual)
 cnnThresh = 0.00001     # change threshold for CNN classifier to modify accepted/rejected components
 
 # if true, pass through the CNN classifier with a low threshold (keeps clearer neuron shapes and excludes processes):
-if cnnFlag:             
+if cnnFlag:
     allParams.set('quality', {'min_cnn_thr': cnnThresh})
     caimanResults.estimates.evaluate_components_CNN(allParams)
     caimanResults.estimates.plot_contours(img=visual, idx=caimanResults.estimates.idx_components)
-    
+
 # pause for user to decide on parameters
 # input("Press Enter after the parameter is chosen...")
 # %% ********* Send message to MicroManager to trigger data streaming: *********
