@@ -19,44 +19,92 @@ import logging
 from pytictoc import TicToc
 from caiman.source_extraction.cnmf import params as params
 from caiman.source_extraction import cnmf as cnmf
-import os
+import os, time
 from caiman.paths import caiman_datadir
+
+windows = os.name != 'posix'
+if windows:
+    import win32pipe, win32file, pywintypes
 
 # %% ********* Creating named pipes for communication with MicroManager: *********
 timer = TicToc()
 timer.tic()    # start measuring time
 
-sendPipeName = "/tmp/getPipeMMCaImAn.ser"	       # FOR SENDING MESSAGES --> TO MicroManager
-receivePipeName = "/tmp/sendPipeMMCaImAn.ser"     # FOR READING MESSAGES --> FROM MicroManager
+sendPipeName = "getPipeMMCaImAn.ser"	       # FOR SENDING MESSAGES --> TO MicroManager
+receivePipeName = "sendPipeMMCaImAn.ser"     # FOR READING MESSAGES --> FROM MicroManager
 
-MMfileDirectory = '/Applications/MicroManager 2.0 gamma/uMresults'
-CaimanFileDirectory = caiman_datadir()   # specify where the file is saved 
+CaimanFileDirectory = caiman_datadir()   # specify where the file is saved
 
+if windows:
+    def p_create(name, read):
+        return win32pipe.CreateNamedPipe(
+            f'\\\\.\\pipe\\{name}',
+            win32pipe.PIPE_ACCESS_DUPLEX,
+            win32pipe.PIPE_TYPE_MESSAGE | win32pipe.PIPE_READMODE_MESSAGE | win32pipe.PIPE_WAIT,
+            1, 65536, 65536,
+            0,
+            None)
 
-if os.path.exists(sendPipeName):
-   os.remove(sendPipeName)
-   os.mkfifo(sendPipeName)
-   print ("Removed old write-pipe, created new write-pipe.")
-else: 
-   os.mkfifo(sendPipeName)
-   print ("Write-pipe created sucessfully!")
-   
-if os.path.exists(receivePipeName):
-   os.remove(receivePipeName)
-   os.mkfifo(receivePipeName)
-   print ("Removed old read-pipe, created new read-pipe.")
-else: 
-   os.mkfifo(receivePipeName)
-   print ("Read-pipe created sucessfully!")
-    
+    def p_open(pipe):
+        for retry in range(4,-1,-1):
+            try:
+                win32pipe.ConnectNamedPipe(pipe, None)
+                return pipe
+            except pywintypes.error as e:
+                print(f"Something went wrong, error {e.args[0]}, {retry} attempts remain")
+                time.sleep(1)
+
+    def p_close(pipe):
+        win32file.CloseHandle(pipe)
+
+    def p_write(pipe, message):
+        win32file.WriteFile(pipe, message.encode('utf-8'))
+
+    def p_read(pipe):
+        res, buffer = win32file.ReadFile(pipe, 16384)
+        return buffer.decode()
+else:
+    def p_create(name, read):
+        path = f'/tmp/{name}'
+        if os.path.exists(path):
+            os.remove(path)
+        os.mkfifo(path)
+        if read:
+            return open(path, 'r')
+        else:
+            return open(path, 'w', 1)
+
+    def p_open(pipe):
+        pass
+
+    def p_close(pipe):
+        name = pipe.name
+        pipe.close()
+        os.remove(name)
+
+    def p_write(pipe, message):
+        pipe.write(message + '\n')
+
+    def p_read(pipe):
+        return pipe.readline()[:-1]
+
+pipeRead = p_create(receivePipeName, True)
+pipeWrite = p_create(sendPipeName, False)
+
+def cleanup():
+    p_close(pipeWrite)
+    p_close(pipeRead)
+
 timer.toc()
 # %% ********* Wait for file name: *********
 print("Waiting for file name..")
-pipeRead = open(receivePipeName, 'r')                       # open the read pipe
-getFileName = pipeRead.readline()[:-1]                      # wait for message
+p_open(pipeRead)
+getFileName = p_read(pipeRead)
+
+p_open(pipeWrite)
 
 fullFileName = getFileName + '_MMStack_Default.ome.tif'
-fileToProcess = os.path.join(CaimanFileDirectory, 'example_movies', getFileName, fullFileName) # join downstream folders
+fileToProcess = os.path.join(CaimanFileDirectory, getFileName, fullFileName) # join downstream folders
 
 print("File name received: " + fullFileName)
 timer.toc()
@@ -158,6 +206,22 @@ initialParamsDict = { 'fnames': fileToProcess,
               
     }
 
+# %% ********* Wait for pre-initialization trigger: *********
+print("Now waiting for MicroManager to capture the first frame...")
+triggerMessage_init = p_read(pipeRead)
+print(triggerMessage_init)
+expectedMessage_init = "FirstFrameReady"
+
+#  ********* Start algorithm setup if the message is right: *********
+if triggerMessage_init == expectedMessage_init:
+    print("Setting up CaImAn...")
+else:
+    cleanup()
+    raise RuntimeError("*** ERROR *** PRE-INITIALIZATION FAILED ***")
+
+timer.toc()
+
+# %% ********* Set up CaImAn: *********
 
 allParams = params.CNMFParams(params_dict=initialParamsDict)    # define parameters in the params.CNMFParams
 caimanResults = cnmf.online_cnmf.OnACID(params=allParams)       # pass parameters to caiman object
@@ -166,8 +230,7 @@ caimanResults = cnmf.online_cnmf.OnACID(params=allParams)       # pass parameter
 timer.toc()
 # %% ********* Wait for initialization trigger message from MicroManager: *********
 print("Now waiting for MicroManager to capture " + str(initFrames) + " initialization frames..")
-pipeRead = open(receivePipeName, 'r')                # open the read pipe
-triggerMessage_init = pipeRead.readline()[:-1]       # wait for message
+triggerMessage_init = p_read(pipeRead)
 print(triggerMessage_init)
 expectedMessage_init = "startInitProcess"
 
@@ -176,9 +239,9 @@ if triggerMessage_init == expectedMessage_init:
     print("*** Starting Initialization protocol with " + initMethod_online + " method ***")
     caimanResults.initialize_online()           # initialize model
 else:
-    print("*** WARNING *** INITIALIZATION FAILED ***")
-    exit()
-    
+    cleanup()
+    raise RuntimeError("*** ERROR *** INITIALIZATION FAILED ***")
+
 timer.toc()
 # %% ********* Visualize results of initialization: *********
 print("Initialization finished. Choose threshold parameter to adjust accepted/rejected components!")
@@ -197,23 +260,25 @@ if cnnFlag:
     
 # pause for user to decide on parameters
 # input("Press Enter after the parameter is chosen...")
-# %% ********* Send message to MicroManager to trigger data streaming: *********   
-triggerStream = "startStreamAcquisition\n"      # include new line at the end
-pipeWrite = open(sendPipeName, 'w', 1)          # write (1 is for activating line buffering)
-pipeWrite.write(triggerStream)          # write to pipe
+# %% ********* Send message to MicroManager to trigger data streaming: *********
+triggerStream = "startStreamAcquisition"
+p_write(pipeWrite, triggerStream)
 
 print("CaImAn is ready for online analysis. Message was sent to MicroManager!")
 
 timer.toc()
-# %% ********* Wait for streaming analysis trigger message from MicroManager: *********    
-pipeRead = open(receivePipeName, 'r')                   # open the read pipe
-triggerMessage_analyse = pipeRead.readline()[:-1]       # wait for message
+# %% ********* Wait for streaming analysis trigger message from MicroManager: *********
+triggerMessage_analyse = p_read(pipeRead)
 expectedMessage_analyse = "startStreamAnalysis"
 
 #  ********* Start online analysis if the message is right: *********
 if triggerMessage_analyse == expectedMessage_analyse:
     print("*** Starting online analysis with OnACID algorithm ***")
     caimanResults.fit_online()           # online analysis
+
+timer.toc()
+# %% Cleanup
+cleanup()
 
 # %% TO DO:
     #(1) get output from fit_online()  # tried with monkeypatch -> it works well but values are not

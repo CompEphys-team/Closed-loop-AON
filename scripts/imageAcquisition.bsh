@@ -12,13 +12,19 @@
  import java.time.LocalDateTime; 
  import java.io.*;
  import java.io.IOException;
+
+ windows = System.getProperty("os.name").startsWith("Windows");
+ pipePrefix = windows ? "\\\\.\\pipe\\" : "/tmp/";
+ msgSuffix = windows ? "" : "\n";
  
  // ********* USER DEFINED PARAMETERS *********
  
- sendPipeName = "/tmp/sendPipeMMCaImAn.ser";			// specify named pipe for sending messages from MM
- receivePipeName = "/tmp/getPipeMMCaImAn.ser";		// specify named pipe for receiving messages to MM
+ sendPipeName = pipePrefix + "sendPipeMMCaImAn.ser";			// specify named pipe for sending messages from MM
+ receivePipeName = pipePrefix + "getPipeMMCaImAn.ser";		// specify named pipe for receiving messages to MM
+ demo = true;
+ demoFileName = "demoCalciumRecording";
  
- saveLocationPrefix = "/Users/teatompos/caiman_data/example_movies/"; 	// define saving file directory 
+ saveLocationPrefix = "C:\\Users\\felix\\caiman_data\\"; 	// define saving file directory 
  																									// (has to end with a front (or back) slash, depending on the OS)
  initialFrames = 30;		// frames used to initialize CaImAN
  streamingFrames = 150;		// frames used for online analysis
@@ -35,13 +41,38 @@
  // createMultipageTIFFDatastore(directory, shouldGenerateSeparateMetadata, shouldSplitPositions):
  multiTIFFstore = mm.data().createMultipageTIFFDatastore(saveLocation, true, true); 
 
+
+ // ********* Open pipes *********
+ fileIn = null;
+ fileOut = null;
  try {
- 	fileOut = new RandomAccessFile(sendPipeName, "rw"); 
- 	msg = new String(fileName);
-	fileOut.write(msg.getBytes()); 
-	print("File name is : " + saveLocation + ". Message was sent to CaImAn.");
+ 	fileOut = new RandomAccessFile(sendPipeName, "rw");
  } catch (Exception e) {
- 	e.printStackTrace();
+ 	print("Error opening send pipe");
+ 	throw e;
+ };
+ 
+ try {
+ 	fileIn = new RandomAccessFile(receivePipeName, "rw");
+ } catch (Exception e) {
+ 	print("Error opening receive pipe");
+ 	throw e;
+ };
+
+ // ********* Send file location *********
+ try {
+ 	msg = "";
+ 	if ( demo ) {
+ 		msg = demoFileName;
+ 	} else {
+ 		msg = fileName;
+ 	}
+ 	msg += msgSuffix;
+	fileOut.write(msg.getBytes()); 
+	print("File path and name is : " + saveLocationPrefix + msg + ". Message was sent to CaImAn.");
+ } catch (Exception e) {
+ 	print("Error sending filename:");
+ 	print(e);
  }; 
 
  // ********* BASIC IMAGE ACQUISITION PARAMETERS *********
@@ -64,6 +95,17 @@
       image = mm.data().convertTaggedImage(tagged, builder.time(curFrame).build(), null); // convert to an Image at the desired timepoint
       multiTIFFstore.putImage(image);	 // this line displays and saves the image
       curFrame++;
+
+      if ( curFrame == 1 ) {
+      	try {
+      		preInitTrigger = "FirstFrameReady" + msgSuffix;
+				fileOut.write(preInitTrigger.getBytes()); 
+				print("Initial acquisition started. Pre-init trigger message was sent to CaImAn.");
+		 	} catch (Exception e) {
+		 		print("Error sending pre-init trigger:");
+		 		print(e);
+		 	};
+      }
 	 };
  };
  mmc.stopSequenceAcquisition(); 			// stop acquisition when initialization frames are acquired
@@ -73,12 +115,12 @@
  initTrigger = "startInitProcess";					// initialization trigger message
  if (curFrame == initialFrames) {
  	try {
- 		fileOut = new RandomAccessFile(sendPipeName, "rw"); 
- 		msg = new String(initTrigger + "\n");
+ 		msg = initTrigger + msgSuffix;
 		fileOut.write(msg.getBytes()); 
 		print("Initial acquisition stopped. Trigger message was sent to CaImAn.");
  	} catch (Exception e) {
- 		e.printStackTrace();
+ 		print("Error sending init trigger:");
+ 		print(e);
  	}; 
  } else { 
  	print("Number of frames acquired is not sufficient to trigger initialization protocol with CaImAn.");
@@ -87,7 +129,7 @@
  // ********* WAIT FOR TRIGGER MESSAGE *********
 
  print("*** Waiting for CaImAn initialization to finish ***");
- fileIn = new RandomAccessFile(receivePipeName, "rw");
+
  pipeMessage = fileIn.readLine(); 		// script is paused until it receives a message
  
  expectedMessage = "startStreamAcquisition";
@@ -110,12 +152,12 @@
 			streamTrigger = "startStreamAnalysis";
       	if (curFrame == initialFrames) {
       	 	 	try {
- 						fileOut = new RandomAccessFile(sendPipeName, "rw"); 
- 						msg = new String(streamTrigger + "\n");					// sent trigger for online analysis
+ 						msg = streamTrigger + msgSuffix;					// sent trigger for online analysis
 						fileOut.write(msg.getBytes()); 
 						print("Trigger message for streaming analysis sent to CaImAn!");
  					} catch (Exception e) {
- 						e.printStackTrace();
+ 						print("Error sending stream trigger");
+ 						print(e);
  					};
  			};   	
       	curFrame++; // increment frame number
