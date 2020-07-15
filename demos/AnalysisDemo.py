@@ -27,43 +27,43 @@ from caiman.paths import caiman_datadir
 timer = TicToc()
 timer.tic()    # start measuring time
 
-sendPipeName = "/tmp/getPipeMMCaImAn.ser"	       # FOR SENDING MESSAGES --> TO MicroManager
-receivePipeName = "/tmp/sendPipeMMCaImAn.ser"     # FOR READING MESSAGES --> FROM MicroManager
+# sendPipeName = "/tmp/getPipeMMCaImAn.ser"	       # FOR SENDING MESSAGES --> TO MicroManager
+# receivePipeName = "/tmp/sendPipeMMCaImAn.ser"     # FOR READING MESSAGES --> FROM MicroManager
 
-MMfileDirectory = '/Applications/MicroManager 2.0 gamma/uMresults'
+# MMfileDirectory = '/Applications/MicroManager 2.0 gamma/uMresults'
 CaimanFileDirectory = caiman_datadir()   # specify where the file is saved 
 
 
-if os.path.exists(sendPipeName):
-   os.remove(sendPipeName)
-   os.mkfifo(sendPipeName)
-   print ("Removed old write-pipe, created new write-pipe.")
-else: 
-   os.mkfifo(sendPipeName)
-   print ("Write-pipe created sucessfully!")
+# if os.path.exists(sendPipeName):
+#    os.remove(sendPipeName)
+#    os.mkfifo(sendPipeName)
+#    print ("Removed old write-pipe, created new write-pipe.")
+# else: 
+#    os.mkfifo(sendPipeName)
+#    print ("Write-pipe created sucessfully!")
    
-if os.path.exists(receivePipeName):
-   os.remove(receivePipeName)
-   os.mkfifo(receivePipeName)
-   print ("Removed old read-pipe, created new read-pipe.")
-else: 
-   os.mkfifo(receivePipeName)
-   print ("Read-pipe created sucessfully!")
+# if os.path.exists(receivePipeName):
+#    os.remove(receivePipeName)
+#    os.mkfifo(receivePipeName)
+#    print ("Removed old read-pipe, created new read-pipe.")
+# else: 
+#    os.mkfifo(receivePipeName)
+#    print ("Read-pipe created sucessfully!")
     
-timer.toc()
-# %% ********* Wait for file name: *********
-print("Waiting for file name..")
-pipeRead = open(receivePipeName, 'r')                       # open the read pipe
-getFileName = pipeRead.readline()[:-1]                      # wait for message
+# timer.toc()
+# # %% ********* Wait for file name: *********
+# print("Waiting for file name..")
+# pipeRead = open(receivePipeName, 'r')                       # open the read pipe
+# getFileName = pipeRead.readline()[:-1]                      # wait for message
 
-fullFileName = getFileName + '_MMStack_Default.ome.tif'
-# fileToProcess = os.path.join(CaimanFileDirectory, 'example_movies', getFileName, fullFileName) # join downstream folders
+# fullFileName = getFileName + '_MMStack_Default.ome.tif'
+# # fileToProcess = os.path.join(CaimanFileDirectory, 'example_movies', getFileName, fullFileName) # join downstream folders
 
-print("File name received: " + fullFileName)
-timer.toc()
+# print("File name received: " + fullFileName)
+# timer.toc()
 # %% ********* Defining parameters: *********
 print("*** Defining analysis parameters ***")
-fileToProcess = os.path.join(CaimanFileDirectory, 'example_movies', 'demoCalciumRecording.tif') # FOR TESTING PURPOSES
+fileToProcess = os.path.join(CaimanFileDirectory, 'demoCalciumRecording', 'demoCalciumRecording_MMStack_Default.ome.tif') # FOR TESTING PURPOSES
 
 
 fr = 40  # frame rate (Hz)
@@ -147,13 +147,29 @@ if cnnFlag:
 
 # input("Press Enter after the parameter is chosen...") # pause for user to decide on parameters
 
-triggerStream = "startStreamAcquisition\n"      # include new line at the end
-pipeWrite = open(sendPipeName, 'w', 1)          # write (1 is for activating line buffering)
-pipeWrite.write(triggerStream)          # write to pipe
+# triggerStream = "startStreamAcquisition\n"      # include new line at the end
+# pipeWrite = open(sendPipeName, 'w', 1)          # write (1 is for activating line buffering)
+# pipeWrite.write(triggerStream)          # write to pipe
 
 print("CaImAn is ready for online analysis. Message was sent to MicroManager!")
 
 timer.toc()
+
+# %% monkeypatch fit_next() so we can acces deltaf/f0 values during online analysis
+def monkeypatch(func):
+    def wrapped(*args, **kwargs):
+        result = func(*args, **kwargs)
+        process_frame(args[0], args[1])
+        return result
+    return wrapped
+
+cnmf.online_cnmf.OnACID.fit_next = monkeypatch(cnmf.online_cnmf.OnACID.fit_next) # replace the class function
+
+def process_frame(results, t):
+    print(t, results.estimates.C_on[0, t])
+    deltaf = results.estimates.C_on[0][-1] # last value in estimates.C_on should be deltaf/f0 for last processed frame
+    print(deltaf) # this should be pushed to StdpC (instead of print), but values are not correct 
+   
 # %% ********* Wait for streaming analysis trigger message from MicroManager: *********    
 print("Waiting for MicroManager to start recording..")
 
@@ -177,8 +193,8 @@ caimanResults.estimates.view_components(img=visual, idx=caimanResults.estimates.
     # get output from fit_online()
     # pass the values to stdpc
 
-os.remove(sendPipeName)
-os.remove(receivePipeName)
+# os.remove(sendPipeName)
+# os.remove(receivePipeName)
 
 
 
